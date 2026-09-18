@@ -29,18 +29,26 @@ export default function QuickScoreTracker() {
     fetchDateData(selectedDate);
   }, [selectedDate]);
 
-  const fetchDateData = async (date) => {
+ const fetchDateData = async (date) => {
+    if (!GAS_URL || GAS_URL.includes("YOUR_ACTUAL_DEPLOYMENT_ID")) {
+      console.warn("GAS_URL이 설정되지 않았습니다.");
+      return;
+    }
+
     setIsLoading(true);
     try {
-      // GAS doGet 또는 doPost로 해당 날짜 데이터 조회 요청
       const res = await fetch(`${GAS_URL}?date=${date}`);
       if (res.ok) {
         const data = await res.json();
+        // 구글 시트에 등록된 명단이 있다면 업데이트
+        if (data.members && data.members.length > 0) {
+          setMemberList(data.members);
+        }
         if (data.attendance) setAttendance(data.attendance);
         if (data.stats) setStats(data.stats);
       }
     } catch (err) {
-      console.log('데이터 조회 실패 (기존 설정 유지):', err);
+      console.error('구글 시트 데이터 조회 실패:', err);
     } finally {
       setIsLoading(false);
     }
