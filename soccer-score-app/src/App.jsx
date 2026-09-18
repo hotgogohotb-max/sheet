@@ -1,20 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, CheckCircle2, UserCheck, Users, RefreshCw, Plus, Minus, AlertTriangle } from 'lucide-react';
+import { Calendar, CheckCircle2, UserCheck, Users, RefreshCw, Plus, Minus } from 'lucide-react';
 
-// 구글 앱스 스크립트 웹앱 URL (새 배포 URL을 넣어주세요)
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyJAwZD_k69nTmsFftPldcVPWtXfyUqqJIV4PYYeAq6UoPdWaU9D4fz6Kvmb6qBBl0Z/exec";
-const GAS_URL1  = "https://script.google.com/macros/s/AKfycbzb-Tr6EnOa5FORkuiP6KrUif5emEzDS_S-XlQMfF_uIS9ZdXs_4XkJG28SXRp034Ed/exec";
+// 구글 앱스 스크립트 웹앱 URL
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyYlNuZXvVilEaaa1O9PtZ1GbqprGq_eOhRFJpWteUX8LUBJvysBnKVJIse9JuGOW8K/exec";
 
 export default function QuickScoreTracker() {
   const todayStr = new Date().toISOString().split('T')[0];
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [isLoading, setIsLoading] = useState(false);
 
-  // 디버깅/에러 상태
-  const [errorMessage, setErrorMessage] = useState('');
-  const [debugLog, setDebugLog] = useState(null);
-
-  // 시트 데이터 상태
   const [players, setPlayers] = useState([]);
   const [attendance, setAttendance] = useState({});
   const [stats, setStats] = useState({});
@@ -27,22 +21,10 @@ export default function QuickScoreTracker() {
 
   const fetchDateData = async (date) => {
     setIsLoading(true);
-    setErrorMessage('');
 
     try {
-      // 1. action=load 파라미터 필수 포함
       const targetUrl = `${GAS_URL}?action=load&date=${encodeURIComponent(date)}`;
-      
-      // 2. redirect: 'follow' 옵션으로 302 리다이렉트를 끝까지 추적
-      const res = await fetch(targetUrl, {
-        method: 'GET',
-        redirect: 'follow',
-      });
-
-      if (!res.ok) {
-        throw new Error(`HTTP 에러: ${res.status}`);
-      }
-
+      const res = await fetch(targetUrl, { method: 'GET', redirect: 'follow' });
       const text = await res.text();
       const data = JSON.parse(text);
 
@@ -53,19 +35,16 @@ export default function QuickScoreTracker() {
         const newAtt = {};
         const newStats = {};
         loadedPlayers.forEach(p => {
-          newAtt[p.name] = p.isAttended !== undefined ? p.isAttended : true;
+          newAtt[p.name] = p.isAttended || false;
           newStats[p.name] = { goals: p.goals || 0, assists: p.assists || 0 };
         });
 
         setAttendance(newAtt);
         setStats(newStats);
         if (data.score) setScore(data.score);
-      } else {
-        setErrorMessage(`[GAS 오류] ${data.message}`);
       }
     } catch (err) {
-      console.error('Data fetch error:', err);
-      setErrorMessage(`[통신 에러] ${err.message}`);
+      console.error('데이터 로드 실패:', err);
     } finally {
       setIsLoading(false);
     }
@@ -86,21 +65,22 @@ export default function QuickScoreTracker() {
     });
   };
 
+  // 참석자에 포함된 데이터 기반으로만 시트 저장
   const handleSaveData = async () => {
     setIsLoading(true);
-    setErrorMessage('');
     try {
       const statsPayload = [];
-      Object.keys(attendance).forEach(name => {
-        statsPayload.push({
-          name: name,
-          type: 'attendance',
-          value: attendance[name] ? 'O' : ''
-        });
 
-        if (stats[name]) {
-          statsPayload.push({ name: name, type: 'goal', value: stats[name].goals || 0 });
-          statsPayload.push({ name: name, type: 'assist', value: stats[name].assists || 0 });
+      // attendance[name]이 true인 (참석 체크된) 선수만 추출하여 저장
+      Object.keys(attendance).forEach(name => {
+        if (attendance[name]) {
+          const userStat = stats[name] || { goals: 0, assists: 0 };
+          statsPayload.push({
+            name: name,
+            attendance: true,
+            goal: userStat.goals || 0,
+            assist: userStat.assists || 0
+          });
         }
       });
 
@@ -111,17 +91,17 @@ export default function QuickScoreTracker() {
       };
 
       const saveUrl = `${GAS_URL}?action=save&data=${encodeURIComponent(JSON.stringify(payload))}`;
-      const res = await fetch(saveUrl);
+      const res = await fetch(saveUrl, { method: 'GET', redirect: 'follow' });
       const text = await res.text();
       const data = JSON.parse(text);
 
       if (data.result === 'success') {
-        alert('성공적으로 저장되었습니다!');
+        alert('구글 시트에 참석자 데이터가 저장되었습니다!');
       } else {
-        throw new Error(`저장 오류: ${data.message}`);
+        alert('저장 실패: ' + data.message);
       }
     } catch (err) {
-      setErrorMessage(`[저장 에러] ${err.message}`);
+      alert('저장 중 오류 발생: ' + err.message);
     } finally {
       setIsLoading(false);
     }
@@ -130,7 +110,7 @@ export default function QuickScoreTracker() {
   const attendedCount = Object.values(attendance).filter(Boolean).length;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-2 sm:p-4 max-w-md mx-auto font-sans pb-28">
+    <div className="min-h-screen bg-slate-900 text-white p-2 sm:p-4 max-w-md mx-auto font-sans pb-24">
       {/* 1. 상단 컨트롤러 */}
       <div className="bg-slate-800 rounded-xl p-3 mb-3 shadow-lg border border-slate-700">
         <div className="flex items-center justify-between mb-2">
@@ -151,7 +131,7 @@ export default function QuickScoreTracker() {
           </button>
         </div>
 
-        {/* 경기 스코어 입력 */}
+        {/* 경기 스코어 */}
         <div className="flex items-center justify-between bg-slate-900/80 p-2 rounded-lg mb-2">
           <span className="text-xs font-bold text-slate-300">경기 스코어</span>
           <div className="flex items-center space-x-2">
@@ -205,25 +185,13 @@ export default function QuickScoreTracker() {
         </div>
       </div>
 
-      {/* 2. 에러 메시지 출력 상자 */}
-      {errorMessage && (
-        <div className="bg-rose-950/80 border border-rose-500/80 rounded-xl p-3 mb-3 text-xs text-rose-200">
-          <div className="flex items-center space-x-1.5 font-bold mb-1 text-rose-400">
-            <AlertTriangle className="w-4 h-4" />
-            <span>연동 디버그 에러</span>
-          </div>
-          <p className="whitespace-pre-wrap break-all">{errorMessage}</p>
-        </div>
-      )}
-
-      {/* 3. 로딩 및 디버그 로그 */}
       {isLoading && (
-        <div className="text-center py-4 text-slate-400 text-xs">
-          구글 시트 데이터를 로딩 중입니다...
+        <div className="text-center py-6 text-slate-400 text-xs">
+          구글 시트 동기화 중...
         </div>
       )}
 
-      {/* 4. 선수 명단 (3열 초밀집 그리드) */}
+      {/* 2. 선수 명단 (3열 그리드) */}
       <div className="grid grid-cols-3 gap-1.5">
         {players
           .filter(p => filterMode !== 'attended' || attendance[p.name])
@@ -232,6 +200,7 @@ export default function QuickScoreTracker() {
             const isAttended = !!attendance[name];
             const userStat = stats[name] || { goals: 0, assists: 0 };
 
+            // 1) 출석체크 탭
             if (filterMode === 'attendance') {
               return (
                 <button
@@ -253,16 +222,40 @@ export default function QuickScoreTracker() {
               );
             }
 
+            // 2) 전체보기 탭 (누적 토탈 골/어시 표출)
+            if (filterMode === 'all') {
+              return (
+                <div
+                  key={name}
+                  className="p-2 rounded-lg border text-center bg-slate-800/90 border-slate-700 flex flex-col justify-between"
+                >
+                  <div className="flex items-center justify-between px-0.5 mb-1">
+                    <span className="text-xs font-bold text-slate-100 truncate">{name}</span>
+                    {isAttended && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>}
+                  </div>
+                  <div className="bg-slate-900/90 p-1.5 rounded text-[11px] space-y-0.5">
+                    <div className="flex justify-between text-amber-400 font-semibold">
+                      <span>누적 골</span>
+                      <span>{p.totalGoals || 0}</span>
+                    </div>
+                    <div className="flex justify-between text-sky-400 font-semibold">
+                      <span>누적 어시</span>
+                      <span>{p.totalAssists || 0}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // 3) 참석자만 탭 (당일 스탯 조작)
             return (
               <div
                 key={name}
-                className={`p-1.5 rounded-lg border text-center bg-slate-800 border-slate-700 flex flex-col justify-between ${
-                  !isAttended ? 'opacity-50' : ''
-                }`}
+                className="p-1.5 rounded-lg border text-center bg-slate-800 border-slate-700 flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between px-0.5">
                   <span className="text-xs font-bold text-slate-200 truncate">{name}</span>
-                  {isAttended && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>}
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                 </div>
 
                 <div className="mt-1 space-y-1 bg-slate-900/80 p-1 rounded">
@@ -307,14 +300,6 @@ export default function QuickScoreTracker() {
           })}
       </div>
 
-      {/* 5. 디버그 응답 정보 (개발 확인용) */}
-      {debugLog && (
-        <div className="mt-4 bg-slate-950 p-2 rounded border border-slate-800 text-[10px] text-slate-400 overflow-x-auto">
-          <div className="font-bold text-slate-300 mb-1">RAW 응답 데이터:</div>
-          <pre>{JSON.stringify(debugLog, null, 2)}</pre>
-        </div>
-      )}
-
       {/* 하단 저장 버튼 */}
       <div className="fixed bottom-2 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] max-w-md px-2">
         <button
@@ -322,7 +307,7 @@ export default function QuickScoreTracker() {
           disabled={isLoading}
           className="w-full bg-emerald-600 hover:bg-emerald-500 font-bold py-3 rounded-xl shadow-lg flex items-center justify-center space-x-2 text-sm text-white disabled:bg-slate-600"
         >
-          <span>{selectedDate} 데이터 저장</span>
+          <span>{selectedDate} 참석자 데이터 저장</span>
         </button>
       </div>
     </div>
