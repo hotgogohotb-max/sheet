@@ -35,13 +35,18 @@ export default function QuickScoreTracker() {
         const newAtt = {};
         const newStats = {};
         loadedPlayers.forEach(p => {
-          newAtt[p.name] = p.isAttended || false;
+          // 데이터가 없거나 isAttended가 false/undefined면 기본값을 false(참석 해제)로 처리
+          newAtt[p.name] = p.isAttended === true;
           newStats[p.name] = { goals: p.goals || 0, assists: p.assists || 0 };
         });
 
         setAttendance(newAtt);
         setStats(newStats);
-        if (data.score) setScore(data.score);
+        if (data.score) {
+          setScore(data.score);
+        } else {
+          setScore({ home: 0, away: 0 });
+        }
       }
     } catch (err) {
       console.error('데이터 로드 실패:', err);
@@ -65,13 +70,12 @@ export default function QuickScoreTracker() {
     });
   };
 
-  // 참석자에 포함된 데이터 기반으로만 시트 저장
+  // 참석 체크된 인원 기준 데이터 저장
   const handleSaveData = async () => {
     setIsLoading(true);
     try {
       const statsPayload = [];
 
-      // attendance[name]이 true인 (참석 체크된) 선수만 추출하여 저장
       Object.keys(attendance).forEach(name => {
         if (attendance[name]) {
           const userStat = stats[name] || { goals: 0, assists: 0 };
@@ -222,7 +226,7 @@ export default function QuickScoreTracker() {
               );
             }
 
-            // 2) 전체보기 탭 (누적 토탈 골/어시 표출)
+            // 2) 전체보기 탭 (누적 토탈 골/어시)
             if (filterMode === 'all') {
               return (
                 <div
@@ -247,7 +251,7 @@ export default function QuickScoreTracker() {
               );
             }
 
-            // 3) 참석자만 탭 (당일 스탯 조작)
+            // 3) 참석자만 탭 (당일 골/어시 조작)
             return (
               <div
                 key={name}
