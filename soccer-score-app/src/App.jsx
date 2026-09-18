@@ -1,109 +1,242 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Calendar, CheckCircle2, UserCheck, Users, RefreshCw, Plus, Minus } from 'lucide-react';
 
-const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwbGhMkA5RYyBeeV8rdIjAYYTmz4msatck8GE8oWbFxHn_1Z2sHOodUh2-HlFThmAc/exec";
+// 바이킹 축구팀 전체 명단 예시 (필요시 구글 시트 멤버 연동)
+const ALL_MEMBERS = [
+  '박성수', '김철수', '이영희', '홍길동', '정민우',
+  '최현우', '강동원', '윤서준', '임재범', '한지민',
+  '송중기', '배수지', '조인성', '김태리', '남주혁'
+];
 
-const rawNames = ["김광태", "김돈하", "김동현", "김민성", "김상오", "김태진", "김필우", "김한주", "박성수", "박승빈", "박정근", "박종엽", "박종호", "송상규", "심영민", "심현승", "안광빈", "유재민", "유재영", "이대행", "이동민", "이승주", "이정수", "이정혁", "이현우", "이형진", "정인탁", "최건혁", "최진석", "허성찬", "홍석운", "최원석", "홍석재"];
+// 구글 앱스 스크립트 웹앱 URL
+const GAS_URL  = "https://script.google.com/macros/s/AKfycbzb-Tr6EnOa5FORkuiP6KrUif5emEzDS_S-XlQMfF_uIS9ZdXs_4XkJG28SXRp034Ed/exec";
 
-export default function App() {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [ourScore, setOurScore] = useState(0);
-  const [opponentScore, setOpponentScore] = useState(0);
-  const [players, setPlayers] = useState(() => rawNames.map((name, i) => ({ id: i + 1, name, goals: 0, assists: 0 })));
+export default function QuickScoreTracker() {
+  // 1. 날짜 상태 (기본값: 오늘 YYYY-MM-DD)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const updateStat = (id, type, delta) => {
-    setPlayers(prev => prev.map(p => p.id === id ? { ...p, [type]: Math.max(0, p[type] + delta) } : p));
-  };
+  // 2. 출석 및 필터 상태
+  const [attendance, setAttendance] = useState({}); // { '박성수': true, '김철수': false }
+  const [filterMode, setFilterMode] = useState('attendance'); // 'all' | 'attended' | 'attendance' (출석체크모드)
 
-  const resetStats = () => {
-    if (window.confirm("모든 스탯 데이터를 초기화하시겠습니까?")) {
-      setOurScore(0);
-      setOpponentScore(0);
-      setPlayers(rawNames.map((name, i) => ({ id: i + 1, name, goals: 0, assists: 0 })));
-    }
-  };
+  // 3. 경기 기록 상태 (선수별 득점/어시스트)
+  const [stats, setStats] = useState({});
 
-  const sendDataToSheet = async () => {
-    const formattedDate = selectedDate.substring(5);
-    const activePlayers = players.filter(p => p.goals > 0 || p.assists > 0);
+  // 날짜 변경 시 해당 날짜 데이터 불러오기
+  useEffect(() => {
+    fetchDateData(selectedDate);
+  }, [selectedDate]);
 
-    if (activePlayers.length === 0) {
-      alert("기록된 골이나 어시스트가 없습니다.");
-      return;
-    }
-
-    const payload = activePlayers.flatMap(p => [
-      { name: p.name, date: formattedDate, type: "goal", value: p.goals },
-      { name: p.name, date: formattedDate, type: "assist", value: p.assists }
-    ]).filter(item => item.value > 0);
-
+  const fetchDateData = async (date) => {
+    setIsLoading(true);
     try {
-      await fetch(GAS_WEB_APP_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        body: JSON.stringify(payload)
-      });
-      alert(`${formattedDate} 스탯 기록 전송 완료!`);
-    } catch (e) {
-      alert("전송 중 오류가 발생했습니다.");
+      // GAS doGet 또는 doPost로 해당 날짜 데이터 조회 요청
+      const res = await fetch(`${GAS_URL}?date=${date}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.attendance) setAttendance(data.attendance);
+        if (data.stats) setStats(data.stats);
+      }
+    } catch (err) {
+      console.log('데이터 조회 실패 (기존 설정 유지):', err);
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  // 출석 토글
+  const toggleAttendance = (name) => {
+    setAttendance(prev => ({
+      ...prev,
+      [name]: !prev[name]
+    }));
+  };
+
+  // 스탯 변경 (득점/어시스트)
+  const updateStat = (name, type, delta) => {
+    setStats(prev => {
+      const userStat = prev[name] || { goals: 0, assists: 0 };
+      const currentVal = userStat[type] || 0;
+      const newVal = Math.max(0, currentVal + delta);
+      return {
+        ...prev,
+        [name]: { ...userStat, [type]: newVal }
+      };
+    });
+  };
+
+  // 표시할 멤버 목록 필터링
+  const displayedMembers = ALL_MEMBERS.filter(name => {
+    if (filterMode === 'attended') return attendance[name] === true;
+    return true; // 'all' 또는 'attendance' 모드에서는 전체 출력
+  });
+
+  const attendedCount = Object.values(attendance).filter(Boolean).length;
 
   return (
-    <div style={{ backgroundColor: '#0f172a', color: '#fff', minHeight: '100vh', padding: '16px', fontFamily: 'sans-serif' }}>
-      {/* 상단 컨트롤 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <input 
-          type="date" 
-          value={selectedDate} 
-          onChange={(e) => setSelectedDate(e.target.value)}
-          style={{ backgroundColor: '#334155', color: '#fff', border: '1px solid #475569', borderRadius: '6px', padding: '6px 10px', fontSize: '14px' }}
-        />
-        <div>
-          <button onClick={resetStats} style={{ backgroundColor: '#475569', color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 12px', marginRight: '8px', cursor: 'pointer' }}>초기화</button>
-          <button onClick={sendDataToSheet} style={{ backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontWeight: 'bold', cursor: 'pointer' }}>시트 전송</button>
+    <div className="min-h-screen bg-slate-900 text-white p-2 sm:p-4 max-w-md mx-auto font-sans">
+      {/* 1. 상단 날짜 및 요약 헤더 */}
+      <div className="bg-slate-800 rounded-xl p-3 mb-2 shadow-lg border border-slate-700">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center space-x-2">
+            <Calendar className="w-5 h-5 text-emerald-400" />
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="bg-slate-700 text-white font-bold text-sm rounded-lg px-2 py-1 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+          <button 
+            onClick={() => fetchDateData(selectedDate)}
+            className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {/* 탭/필터 버튼 (모바일 밀도 최적화) */}
+        <div className="grid grid-cols-3 gap-1 bg-slate-900/60 p-1 rounded-lg text-xs font-medium">
+          <button
+            onClick={() => setFilterMode('attendance')}
+            className={`py-1.5 rounded-md flex items-center justify-center space-x-1 ${
+              filterMode === 'attendance' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>출석체크 ({attendedCount})</span>
+          </button>
+          <button
+            onClick={() => setFilterMode('attended')}
+            className={`py-1.5 rounded-md flex items-center justify-center space-x-1 ${
+              filterMode === 'attended' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>참석자만</span>
+          </button>
+          <button
+            onClick={() => setFilterMode('all')}
+            className={`py-1.5 rounded-md flex items-center justify-center space-x-1 ${
+              filterMode === 'all' ? 'bg-slate-700 text-white font-bold' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>전체보기</span>
+          </button>
         </div>
       </div>
 
-      {/* 스코어보드 */}
-      <div style={{ backgroundColor: '#020617', border: '1px solid #1e293b', borderRadius: '12px', padding: '16px', display: 'flex', justifyContent: 'space-around', alignItems: 'center', marginBottom: '20px' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#34d399', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>우리팀</div>
-          <button onClick={() => setOurScore(Math.max(0, ourScore - 1))} style={{ width: '32px', height: '32px', backgroundColor: '#1e293b', color: '#fff', border: 'none', borderRadius: '6px' }}>-</button>
-          <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#34d399', margin: '0 12px' }}>{ourScore}</span>
-          <button onClick={() => setOurScore(ourScore + 1)} style={{ width: '32px', height: '32px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '6px' }}>+</button>
-        </div>
-        <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#475569' }}>:</div>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#f87171', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>상대팀</div>
-          <button onClick={() => setOpponentScore(Math.max(0, opponentScore - 1))} style={{ width: '32px', height: '32px', backgroundColor: '#1e293b', color: '#fff', border: 'none', borderRadius: '6px' }}>-</button>
-          <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#f87171', margin: '0 12px' }}>{opponentScore}</span>
-          <button onClick={() => setOpponentScore(opponentScore + 1)} style={{ width: '32px', height: '32px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px' }}>+</button>
-        </div>
-      </div>
+      {/* 2. 모바일 초밀집 멤버 리스트 그리드 (3열 출력) */}
+      <div className="grid grid-cols-3 gap-1.5 mb-16">
+        {displayedMembers.map((name) => {
+          const isAttended = !!attendance[name];
+          const userStat = stats[name] || { goals: 0, assists: 0 };
 
-      {/* 선수 리스트 */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {players.map(p => (
-          <div key={p.id} style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 'bold', width: '80px' }}>{p.name}</span>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {/* 골 */}
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '6px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '10px', color: '#34d399', fontWeight: 'bold' }}>GOAL</span>
-                <button onClick={() => updateStat(p.id, 'goals', -1)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>-</button>
-                <span style={{ width: '16px', textAlign: 'center', fontWeight: 'bold', color: p.goals > 0 ? '#34d399' : '#64748b' }}>{p.goals}</span>
-                <button onClick={() => updateStat(p.id, 'goals', 1)} style={{ background: 'none', border: 'none', color: '#34d399', fontWeight: 'bold', cursor: 'pointer' }}>+</button>
+          // 출석 체크 모드일 때의 카드
+          if (filterMode === 'attendance') {
+            return (
+              <button
+                key={name}
+                onClick={() => toggleAttendance(name)}
+                className={`p-2 rounded-lg border text-center transition-all flex flex-col items-center justify-center ${
+                  isAttended
+                    ? 'bg-emerald-950/70 border-emerald-500 text-emerald-200'
+                    : 'bg-slate-800/60 border-slate-700/60 text-slate-500'
+                }`}
+              >
+                <span className="text-sm font-bold truncate w-full">{name}</span>
+                <span className={`text-[10px] mt-0.5 px-1.5 py-0.5 rounded ${
+                  isAttended ? 'bg-emerald-500/20 text-emerald-400 font-semibold' : 'bg-slate-700 text-slate-500'
+                }`}>
+                  {isAttended ? '참석' : '미참석'}
+                </span>
+              </button>
+            );
+          }
+
+          // 경기 스탯 입력 모드일 때의 카드
+          return (
+            <div
+              key={name}
+              className={`p-1.5 rounded-lg border text-center bg-slate-800 border-slate-700 flex flex-col justify-between ${
+                !isAttended ? 'opacity-50' : ''
+              }`}
+            >
+              <div className="flex items-center justify-between px-0.5">
+                <span className="text-xs font-bold text-slate-200 truncate">{name}</span>
+                {isAttended && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>}
               </div>
-              {/* 어시스트 */}
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '6px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '10px', color: '#60a5fa', fontWeight: 'bold' }}>ASST</span>
-                <button onClick={() => updateStat(p.id, 'assists', -1)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>-</button>
-                <span style={{ width: '16px', textAlign: 'center', fontWeight: 'bold', color: p.assists > 0 ? '#60a5fa' : '#64748b' }}>{p.assists}</span>
-                <button onClick={() => updateStat(p.id, 'assists', 1)} style={{ background: 'none', border: 'none', color: '#60a5fa', fontWeight: 'bold', cursor: 'pointer' }}>+</button>
+
+              {/* 스탯 카운터 (골/어시) */}
+              <div className="mt-1 space-y-1 bg-slate-900/80 p-1 rounded">
+                {/* 골 */}
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-amber-400 font-semibold">골 {userStat.goals || 0}</span>
+                  <div className="flex space-x-0.5">
+                    <button
+                      onClick={() => updateStat(name, 'goals', -1)}
+                      className="w-4 h-4 bg-slate-700 rounded flex items-center justify-center text-slate-300"
+                    >
+                      <Minus className="w-2.5 h-2.5" />
+                    </button>
+                    <button
+                      onClick={() => updateStat(name, 'goals', 1)}
+                      className="w-4 h-4 bg-amber-600 rounded flex items-center justify-center text-white"
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* 어시스트 */}
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-sky-400 font-semibold">어시 {userStat.assists || 0}</span>
+                  <div className="flex space-x-0.5">
+                    <button
+                      onClick={() => updateStat(name, 'assists', -1)}
+                      className="w-4 h-4 bg-slate-700 rounded flex items-center justify-center text-slate-300"
+                    >
+                      <Minus className="w-2.5 h-2.5" />
+                    </button>
+                    <button
+                      onClick={() => updateStat(name, 'assists', 1)}
+                      className="w-4 h-4 bg-sky-600 rounded flex items-center justify-center text-white"
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
+      </div>
+
+      {/* 3. 하단 고정 저장 버튼 */}
+      <div className="fixed bottom-2 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] max-w-md px-2">
+        <button
+          onClick={async () => {
+            setIsLoading(true);
+            try {
+              await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: selectedDate, attendance, stats })
+              });
+              alert('구글 시트에 성공적으로 저장되었습니다!');
+            } catch (e) {
+              alert('저장 실패: ' + e.message);
+            } finally {
+              setIsLoading(false);
+            }
+          }}
+          className="w-full bg-emerald-600 hover:bg-emerald-500 font-bold py-3 rounded-xl shadow-lg flex items-center justify-center space-x-2 text-sm text-white"
+        >
+          <span>{selectedDate} 기록 구글 시트에 저장</span>
+        </button>
       </div>
     </div>
   );
