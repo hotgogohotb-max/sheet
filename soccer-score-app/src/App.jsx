@@ -2,11 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, CheckCircle2, UserCheck, Users, RefreshCw, Plus, Minus } from 'lucide-react';
 
 // 구글 앱스 스크립트 웹앱 URL
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxrC-rXDHtdBnSCxiJh7ulYxON1TW5aUf66mQrixaoUwH38CVAH9LOx7mLykAhgVJ3e/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbzSpyn-k8xhj9lCk2IrE9jawWyDSM-_FzDD43pnqDtYAbHp-FZhr5LHzsosOR-FJo7P/exec";
+
+// 이번 주 토요일 날짜(YYYY-MM-DD) 계산 함수
+const getThisSaturday = () => {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0(일) ~ 6(토)
+  // 일요일(0)이면 -1일(지난 토요일), 평일/토요일이면 오는 토요일 계산
+  const distanceToSaturday = dayOfWeek === 0 ? -1 : 6 - dayOfWeek;
+  
+  const saturday = new Date(now);
+  saturday.setDate(now.getDate() + distanceToSaturday);
+
+  const year = saturday.getFullYear();
+  const month = String(saturday.getMonth() + 1).padStart(2, '0');
+  const day = String(saturday.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 export default function QuickScoreTracker() {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const [selectedDate, setSelectedDate] = useState(todayStr);
+  // 기본 선택 날짜를 '이번 주 토요일'로 설정
+  const [selectedDate, setSelectedDate] = useState(getThisSaturday());
   const [isLoading, setIsLoading] = useState(false);
 
   const [players, setPlayers] = useState([]);
@@ -35,7 +51,6 @@ export default function QuickScoreTracker() {
         const newAtt = {};
         const newStats = {};
         loadedPlayers.forEach(p => {
-          // 데이터가 없거나 false면 미참석(해제)을 기본값으로 지정
           newAtt[p.name] = p.isAttended === true;
           newStats[p.name] = { goals: p.goals || 0, assists: p.assists || 0 };
         });
@@ -70,7 +85,6 @@ export default function QuickScoreTracker() {
     });
   };
 
-  // 참석 체크된 인원 기준 데이터 저장
   const handleSaveData = async () => {
     setIsLoading(true);
     try {
@@ -204,7 +218,6 @@ export default function QuickScoreTracker() {
             const isAttended = !!attendance[name];
             const userStat = stats[name] || { goals: 0, assists: 0 };
 
-            // 1) 출석체크 탭
             if (filterMode === 'attendance') {
               return (
                 <button
@@ -226,7 +239,6 @@ export default function QuickScoreTracker() {
               );
             }
 
-            // 2) 전체보기 탭 (누적 토탈 골/어시)
             if (filterMode === 'all') {
               return (
                 <div
@@ -251,7 +263,6 @@ export default function QuickScoreTracker() {
               );
             }
 
-            // 3) 참석자만 탭 (당일 골/어시 조작)
             return (
               <div
                 key={name}
