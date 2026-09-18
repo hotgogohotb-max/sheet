@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, CheckCircle2, UserCheck, Users, RefreshCw, Plus, Minus, AlertTriangle } from 'lucide-react';
 
 // 구글 앱스 스크립트 웹앱 URL (새 배포 URL을 넣어주세요)
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyJAwZD_k69nTmsFftPldcVPWtXfyUqqJIV4PYYeAq6UoPdWaU9D4fz6Kvmb6qBBl0Z/exec";
-const GAS_URL2  = "https://script.google.com/macros/s/AKfycbzb-Tr6EnOa5FORkuiP6KrUif5emEzDS_S-XlQMfF_uIS9ZdXs_4XkJG28SXRp034Ed/exec";
+const GAS_URL2 = "https://script.google.com/macros/s/AKfycbyJAwZD_k69nTmsFftPldcVPWtXfyUqqJIV4PYYeAq6UoPdWaU9D4fz6Kvmb6qBBl0Z/exec";
+const GAS_URL  = "https://script.google.com/macros/s/AKfycbzb-Tr6EnOa5FORkuiP6KrUif5emEzDS_S-XlQMfF_uIS9ZdXs_4XkJG28SXRp034Ed/exec";
 
 export default function QuickScoreTracker() {
   const todayStr = new Date().toISOString().split('T')[0];
