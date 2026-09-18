@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, CheckCircle2, UserCheck, Users, RefreshCw, Plus, Minus, AlertTriangle } from 'lucide-react';
 
 // 구글 앱스 스크립트 웹앱 URL (새 배포 URL을 넣어주세요)
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyJAwZD_k69nTmsFftPldcVPWtXfyUqqJIV4PYYeAq6UoPdWaU9D4fz6Kvmb6qBBl0Z/exec";
-const GAS_URL2  = "https://script.google.com/macros/s/AKfycbzb-Tr6EnOa5FORkuiP6KrUif5emEzDS_S-XlQMfF_uIS9ZdXs_4XkJG28SXRp034Ed/exec";
+const GAS_URL1 = "https://script.google.com/macros/s/AKfycbyJAwZD_k69nTmsFftPldcVPWtXfyUqqJIV4PYYeAq6UoPdWaU9D4fz6Kvmb6qBBl0Z/exec";
+const GAS_URL  = "https://script.google.com/macros/s/AKfycbzb-Tr6EnOa5FORkuiP6KrUif5emEzDS_S-XlQMfF_uIS9ZdXs_4XkJG28SXRp034Ed/exec";
 
 export default function QuickScoreTracker() {
   const todayStr = new Date().toISOString().split('T')[0];
@@ -26,63 +26,46 @@ export default function QuickScoreTracker() {
   }, [selectedDate]);
 
   const fetchDateData = async (date) => {
-    setErrorMessage('');
-    setDebugLog(null);
-
-    if (!GAS_URL || GAS_URL.includes("YOUR_ACTUAL_DEPLOYMENT_ID")) {
-      setErrorMessage("오류: GAS_URL이 초기값 상태입니다. 실제 구글 앱스 스크립트 웹앱 URL로 교체해주세요.");
-      return;
-    }
-
     setIsLoading(true);
-    const targetUrl = `${GAS_URL}?action=load&date=${encodeURIComponent(date)}`;
+    setErrorMessage('');
 
     try {
-      const res = await fetch(targetUrl);
+      // 1. action=load 파라미터 필수 포함
+      const targetUrl = `${GAS_URL}?action=load&date=${encodeURIComponent(date)}`;
+      
+      // 2. redirect: 'follow' 옵션으로 302 리다이렉트를 끝까지 추적
+      const res = await fetch(targetUrl, {
+        method: 'GET',
+        redirect: 'follow',
+      });
 
       if (!res.ok) {
-        throw new Error(`HTTP 응답 에러 (상태코드: ${res.status} ${res.statusText})`);
+        throw new Error(`HTTP 에러: ${res.status}`);
       }
 
       const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (parseErr) {
-        throw new Error(`JSON 파싱 실패 (응답 내용: ${text.substring(0, 100)}...)`);
+      const data = JSON.parse(text);
+
+      if (data.result === 'success' || data.result === 'empty') {
+        const loadedPlayers = data.players || [];
+        setPlayers(loadedPlayers);
+
+        const newAtt = {};
+        const newStats = {};
+        loadedPlayers.forEach(p => {
+          newAtt[p.name] = p.isAttended !== undefined ? p.isAttended : true;
+          newStats[p.name] = { goals: p.goals || 0, assists: p.assists || 0 };
+        });
+
+        setAttendance(newAtt);
+        setStats(newStats);
+        if (data.score) setScore(data.score);
+      } else {
+        setErrorMessage(`[GAS 오류] ${data.message}`);
       }
-
-      setDebugLog(data); // 응답 데이터 보관
-
-      if (data.result === 'error') {
-        throw new Error(`GAS 스크립트 오류: ${data.message || '알 수 없는 오류'}`);
-      }
-
-      const loadedPlayers = data.players || [];
-      setPlayers(loadedPlayers);
-
-      const newAtt = {};
-      const newStats = {};
-      loadedPlayers.forEach(p => {
-        if (p.isAttended !== undefined) {
-          newAtt[p.name] = p.isAttended;
-        } else {
-          newAtt[p.name] = true;
-        }
-        newStats[p.name] = { goals: p.goals || 0, assists: p.assists || 0 };
-      });
-
-      setAttendance(newAtt);
-      setStats(newStats);
-      if (data.score) setScore(data.score);
-
-      if (loadedPlayers.length === 0) {
-        setErrorMessage("알림: 응답은 성공했으나 불러온 선수 목록(players)이 0명입니다. (시트 B열 11행 이하 확인 필요)");
-      }
-
     } catch (err) {
-      console.error('데이터 로드 실패:', err);
-      setErrorMessage(`[로딩 에러] ${err.message}`);
+      console.error('Data fetch error:', err);
+      setErrorMessage(`[통신 에러] ${err.message}`);
     } finally {
       setIsLoading(false);
     }
