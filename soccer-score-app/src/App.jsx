@@ -1,4 +1,7 @@
-// 구글 앱스 스크립트 웹앱 URL
+import React, { useState, useEffect } from 'react';
+import { Calendar, CheckCircle2, UserCheck, Users, RefreshCw, Plus, Minus, AlertTriangle } from 'lucide-react';
+
+// 구글 앱스 스크립트 웹앱 URL (새 배포 URL을 넣어주세요)
 const GAS_URL = "https://script.google.com/macros/s/AKfycbyJAwZD_k69nTmsFftPldcVPWtXfyUqqJIV4PYYeAq6UoPdWaU9D4fz6Kvmb6qBBl0Z/exec";
 const GAS_URL2  = "https://script.google.com/macros/s/AKfycbzb-Tr6EnOa5FORkuiP6KrUif5emEzDS_S-XlQMfF_uIS9ZdXs_4XkJG28SXRp034Ed/exec";
 
@@ -7,59 +10,88 @@ export default function QuickScoreTracker() {
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [isLoading, setIsLoading] = useState(false);
 
-  // 시트에서 읽어온 선수 명단 및 스탯
-  const [players, setPlayers] = useState([]); // [{ name: '박성수', goals: 0, assists: 0 }]
-  const [attendance, setAttendance] = useState({}); // { '박성수': true }
-  const [stats, setStats] = useState({}); // { '박성수': { goals: 1, assists: 0 } }
+  // 디버깅/에러 상태
+  const [errorMessage, setErrorMessage] = useState('');
+  const [debugLog, setDebugLog] = useState(null);
+
+  // 시트 데이터 상태
+  const [players, setPlayers] = useState([]);
+  const [attendance, setAttendance] = useState({});
+  const [stats, setStats] = useState({});
   const [score, setScore] = useState({ home: 0, away: 0 });
   const [filterMode, setFilterMode] = useState('attendance');
 
-  // 날짜 변경 시 시트 데이터 조회 (action=load)
   useEffect(() => {
     fetchDateData(selectedDate);
   }, [selectedDate]);
 
   const fetchDateData = async (date) => {
+    setErrorMessage('');
+    setDebugLog(null);
+
     if (!GAS_URL || GAS_URL.includes("YOUR_ACTUAL_DEPLOYMENT_ID")) {
-      console.warn("GAS_URL을 설정해주세요.");
+      setErrorMessage("오류: GAS_URL이 초기값 상태입니다. 실제 구글 앱스 스크립트 웹앱 URL로 교체해주세요.");
       return;
     }
 
     setIsLoading(true);
+    const targetUrl = `${GAS_URL}?action=load&date=${encodeURIComponent(date)}`;
+
     try {
-      // doGet(action=load&date=YYYY-MM-DD) 호출
-      const res = await fetch(`${GAS_URL}?action=load&date=${encodeURIComponent(date)}`);
-      const data = await res.json();
+      const res = await fetch(targetUrl);
 
-      if (data.result === 'success' || data.result === 'empty') {
-        const loadedPlayers = data.players || [];
-        setPlayers(loadedPlayers);
-
-        // 출석 및 스탯 상태 복원
-        const newAtt = {};
-        const newStats = {};
-        loadedPlayers.forEach(p => {
-          newAtt[p.name] = true; // handleLoad에서 출석된 선수만 players에 담김
-          newStats[p.name] = { goals: p.goals || 0, assists: p.assists || 0 };
-        });
-
-        setAttendance(newAtt);
-        setStats(newStats);
-        if (data.score) setScore(data.score);
+      if (!res.ok) {
+        throw new Error(`HTTP 응답 에러 (상태코드: ${res.status} ${res.statusText})`);
       }
+
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (parseErr) {
+        throw new Error(`JSON 파싱 실패 (응답 내용: ${text.substring(0, 100)}...)`);
+      }
+
+      setDebugLog(data); // 응답 데이터 보관
+
+      if (data.result === 'error') {
+        throw new Error(`GAS 스크립트 오류: ${data.message || '알 수 없는 오류'}`);
+      }
+
+      const loadedPlayers = data.players || [];
+      setPlayers(loadedPlayers);
+
+      const newAtt = {};
+      const newStats = {};
+      loadedPlayers.forEach(p => {
+        if (p.isAttended !== undefined) {
+          newAtt[p.name] = p.isAttended;
+        } else {
+          newAtt[p.name] = true;
+        }
+        newStats[p.name] = { goals: p.goals || 0, assists: p.assists || 0 };
+      });
+
+      setAttendance(newAtt);
+      setStats(newStats);
+      if (data.score) setScore(data.score);
+
+      if (loadedPlayers.length === 0) {
+        setErrorMessage("알림: 응답은 성공했으나 불러온 선수 목록(players)이 0명입니다. (시트 B열 11행 이하 확인 필요)");
+      }
+
     } catch (err) {
-      console.error('데이터 로드 에러:', err);
+      console.error('데이터 로드 실패:', err);
+      setErrorMessage(`[로딩 에러] ${err.message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 출석 토글
   const toggleAttendance = (name) => {
     setAttendance(prev => ({ ...prev, [name]: !prev[name] }));
   };
 
-  // 스탯 변경 (골/어시)
   const updateStat = (name, type, delta) => {
     setStats(prev => {
       const userStat = prev[name] || { goals: 0, assists: 0 };
@@ -71,21 +103,18 @@ export default function QuickScoreTracker() {
     });
   };
 
-  // 구글 시트로 데이터 저장 (action=save)
   const handleSaveData = async () => {
     setIsLoading(true);
+    setErrorMessage('');
     try {
-      // GAS handleSave 포맷 생성
       const statsPayload = [];
       Object.keys(attendance).forEach(name => {
-        // 출석 여부
         statsPayload.push({
           name: name,
           type: 'attendance',
           value: attendance[name] ? 'O' : ''
         });
 
-        // 골/어시
         if (stats[name]) {
           statsPayload.push({ name: name, type: 'goal', value: stats[name].goals || 0 });
           statsPayload.push({ name: name, type: 'assist', value: stats[name].assists || 0 });
@@ -98,18 +127,18 @@ export default function QuickScoreTracker() {
         stats: statsPayload
       };
 
-      // doGet 기반 action=save 전달
       const saveUrl = `${GAS_URL}?action=save&data=${encodeURIComponent(JSON.stringify(payload))}`;
       const res = await fetch(saveUrl);
-      const data = await res.json();
+      const text = await res.text();
+      const data = JSON.parse(text);
 
       if (data.result === 'success') {
         alert('성공적으로 저장되었습니다!');
       } else {
-        alert('저장 실패: ' + data.message);
+        throw new Error(`저장 오류: ${data.message}`);
       }
     } catch (err) {
-      alert('저장 중 오류 발생: ' + err.message);
+      setErrorMessage(`[저장 에러] ${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -118,8 +147,8 @@ export default function QuickScoreTracker() {
   const attendedCount = Object.values(attendance).filter(Boolean).length;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-2 sm:p-4 max-w-md mx-auto font-sans pb-24">
-      {/* 1. 상단 컨트롤러 (날짜 선택 및 스코어) */}
+    <div className="min-h-screen bg-slate-900 text-white p-2 sm:p-4 max-w-md mx-auto font-sans pb-28">
+      {/* 1. 상단 컨트롤러 */}
       <div className="bg-slate-800 rounded-xl p-3 mb-3 shadow-lg border border-slate-700">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center space-x-2">
@@ -148,14 +177,14 @@ export default function QuickScoreTracker() {
               type="number"
               value={score.home}
               onChange={(e) => setScore({ ...score, home: parseInt(e.target.value) || 0 })}
-              className="w-10 bg-slate-800 text-center font-bold text-sm rounded border border-slate-600 py-0.5"
+              className="w-10 bg-slate-800 text-center font-bold text-sm rounded border border-slate-600 py-0.5 text-white"
             />
             <span className="text-xs font-bold">:</span>
             <input
               type="number"
               value={score.away}
               onChange={(e) => setScore({ ...score, away: parseInt(e.target.value) || 0 })}
-              className="w-10 bg-slate-800 text-center font-bold text-sm rounded border border-slate-600 py-0.5"
+              className="w-10 bg-slate-800 text-center font-bold text-sm rounded border border-slate-600 py-0.5 text-white"
             />
             <span className="text-xs text-rose-400">상대</span>
           </div>
@@ -193,14 +222,25 @@ export default function QuickScoreTracker() {
         </div>
       </div>
 
-      {/* 로딩 표시 */}
-      {isLoading && (
-        <div className="text-center py-6 text-slate-400 text-xs">
-          구글 시트 데이터를 동기화하는 중입니다...
+      {/* 2. 에러 메시지 출력 상자 */}
+      {errorMessage && (
+        <div className="bg-rose-950/80 border border-rose-500/80 rounded-xl p-3 mb-3 text-xs text-rose-200">
+          <div className="flex items-center space-x-1.5 font-bold mb-1 text-rose-400">
+            <AlertTriangle className="w-4 h-4" />
+            <span>연동 디버그 에러</span>
+          </div>
+          <p className="whitespace-pre-wrap break-all">{errorMessage}</p>
         </div>
       )}
 
-      {/* 명단 리스트 (3열 초밀집 그리드) */}
+      {/* 3. 로딩 및 디버그 로그 */}
+      {isLoading && (
+        <div className="text-center py-4 text-slate-400 text-xs">
+          구글 시트 데이터를 로딩 중입니다...
+        </div>
+      )}
+
+      {/* 4. 선수 명단 (3열 초밀집 그리드) */}
       <div className="grid grid-cols-3 gap-1.5">
         {players
           .filter(p => filterMode !== 'attended' || attendance[p.name])
@@ -284,7 +324,15 @@ export default function QuickScoreTracker() {
           })}
       </div>
 
-      {/* 하단 고정 저장 버튼 */}
+      {/* 5. 디버그 응답 정보 (개발 확인용) */}
+      {debugLog && (
+        <div className="mt-4 bg-slate-950 p-2 rounded border border-slate-800 text-[10px] text-slate-400 overflow-x-auto">
+          <div className="font-bold text-slate-300 mb-1">RAW 응답 데이터:</div>
+          <pre>{JSON.stringify(debugLog, null, 2)}</pre>
+        </div>
+      )}
+
+      {/* 하단 저장 버튼 */}
       <div className="fixed bottom-2 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] max-w-md px-2">
         <button
           onClick={handleSaveData}
