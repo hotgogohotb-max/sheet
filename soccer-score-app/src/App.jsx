@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, CheckCircle2, UserCheck, Users, RefreshCw, Plus, Minus } from 'lucide-react';
 
 // 구글 앱스 스크립트 웹앱 URL
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxuO9SHKwVqbaS7qAwel-p-SUfPzzW4BPIu45ZI7Q0Z7wFZXEx5EBTmAuLsokVZiuFA/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxdoUsAye5hI8u1-a0TFcJJ3wg1-63eKnCunayy0iCoTVs-MiZ28embBtBhZNVvGctz/exec";
 
 export default function QuickScoreTracker() {
   const todayStr = new Date().toISOString().split('T')[0];
